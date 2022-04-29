@@ -6,7 +6,9 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/btcutil/bech32"
 	"github.com/btcsuite/btcd/btcutil/hdkeychain"
 )
 
@@ -53,12 +55,28 @@ func deriv_from_xpub(xpubkey string, depth uint32) (string, int) {
 		return "", ERR_XPUB_WIF
 	}
 
-	return pubStr.String(), OK_COMPLETED
+	// encode p2pkh
+	if strings.Contains(xpubkey, "xpub") {
+		return pubStr.String(), OK_COMPLETED
+	}
+
+	// otherwise p2wpkh
+	bech32Bytes, err := bech32.ConvertBits(pubStr.ScriptAddress(), 8, 5, true)
+	if err != nil {
+		return "", ERR_XPUB_DERIV
+	}
+	segwitaddr, err := bech32.Encode("bc", bech32Bytes)
+	if err != nil {
+		return "", ERR_XPUB_DERIV
+	}
+
+	return segwitaddr, OK_COMPLETED
 }
 
 func main() {
 
-	test_xpubkey := "xpub661MyMwAqRbcGYzUcVc8JSnN3RcM47JHWMaqtE8yhMfHZohujgvQjX2ezdw2qw6sSMu8B694BQebnASCNvbkZWiBVRvFimSAwgVphguL6LD"
+	// test_xpubkey := "xpub661MyMwAqRbcGYzUcVc8JSnN3RcM47JHWMaqtE8yhMfHZohujgvQjX2ezdw2qw6sSMu8B694BQebnASCNvbkZWiBVRvFimSAwgVphguL6LD"
+	test_xpubkey := "zpub6nSMtU4kF9sZLDrbfRQZYDiJxBxGbXvc3xMraPAveA6VfhRdyrkWSw8hDsdTdAYSxCyR824f1DYHzJ7syUW93zNS23dmJjR8mCvfbrju481"
 
 	for path:= uint32(0) ; path < 20 ; path++ {
 		address, errlevel := deriv_from_xpub(test_xpubkey, path)
