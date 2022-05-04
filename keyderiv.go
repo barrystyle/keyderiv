@@ -6,6 +6,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/btcutil/bech32"
@@ -16,7 +17,8 @@ const (
 	ERR_XPUB_INVALID int = 0
 	ERR_XPUB_DERIV       = 1
 	ERR_XPUB_WIF         = 2
-	OK_COMPLETED         = 3
+	ERR_DERIVPATH        = 3
+	OK_COMPLETED         = 4
 )
 
 func is_xpub_valid(xpubkey string) (*hdkeychain.ExtendedKey, int) {
@@ -29,18 +31,65 @@ func is_xpub_valid(xpubkey string) (*hdkeychain.ExtendedKey, int) {
 	return extKey, OK_COMPLETED
 }
 
-func deriv_from_xpub(xpubkey string, depth uint32) (string, int) {
+func is_path_valid(path string) bool {
 
+	// expecting m/1/2/3/x
+	keyPath := strings.Split(path, "/")
+
+	// must start with hardened xpub
+	if keyPath[0] != "m" {
+		return false
+	}
+
+	// must be in range m/x - m/0/0/0/0/0/0/x
+	pathLen := len(keyPath)
+	if pathLen < 2 || pathLen > 8 {
+		return false
+	}
+
+	// each new child mustnt be hardened
+	for b := 1; b < pathLen-1; b++ {
+		childInt, err := strconv.Atoi(keyPath[b])
+		if (err != nil) {
+			return false
+		}
+		if childInt < 0 || childInt > 2147483647 {
+			return false
+		}
+	}
+
+	// last item should be x
+	if keyPath[pathLen-1] !=  "x" {
+		return false
+	}
+
+	return true
+}
+
+func deriv_from_xpub(xpubkey string, path string, depth uint32) (string, int) {
+
+	// basic sanity checks
         extKey, ret := is_xpub_valid(xpubkey)
         if ret != OK_COMPLETED {
                 return "", ERR_XPUB_INVALID
         }
 
-	// m/0
+	pathValid := is_path_valid(path)
+	if !pathValid {
+		return "", ERR_DERIVPATH
+	}
+
+	// extract path data
+	keyPath := strings.Split(path, "/")
+	pathLen := len(keyPath)
+
 	var err error
-	extKey, err = extKey.Derive(0)
-	if err != nil {
-		return "", ERR_XPUB_DERIV
+	for b := 1; b < pathLen - 1; b++ {
+		childInt, _ := strconv.Atoi(keyPath[b])
+		extKey, err = extKey.Derive(uint32(childInt))
+		if err != nil {
+			return "", ERR_XPUB_DERIV
+		}
 	}
 
 	// m/0/x
@@ -75,15 +124,16 @@ func deriv_from_xpub(xpubkey string, depth uint32) (string, int) {
 
 func main() {
 
-	// test_xpubkey := "xpub661MyMwAqRbcGYzUcVc8JSnN3RcM47JHWMaqtE8yhMfHZohujgvQjX2ezdw2qw6sSMu8B694BQebnASCNvbkZWiBVRvFimSAwgVphguL6LD"
-	test_xpubkey := "zpub6nSMtU4kF9sZLDrbfRQZYDiJxBxGbXvc3xMraPAveA6VfhRdyrkWSw8hDsdTdAYSxCyR824f1DYHzJ7syUW93zNS23dmJjR8mCvfbrju481"
+	test_xpubkey := "xpub661MyMwAqRbcGYzUcVc8JSnN3RcM47JHWMaqtE8yhMfHZohujgvQjX2ezdw2qw6sSMu8B694BQebnASCNvbkZWiBVRvFimSAwgVphguL6LD"
+	// test_xpubkey := "zpub6nSMtU4kF9sZLDrbfRQZYDiJxBxGbXvc3xMraPAveA6VfhRdyrkWSw8hDsdTdAYSxCyR824f1DYHzJ7syUW93zNS23dmJjR8mCvfbrju481"
 
-	for path:= uint32(0) ; path < 20 ; path++ {
-		address, errlevel := deriv_from_xpub(test_xpubkey, path)
+	path := "m/1/2/3/4/5/6/x"
+	for depth:= uint32(0) ; depth < 20 ; depth++ {
+		address, errlevel := deriv_from_xpub(test_xpubkey, path, depth)
 		if errlevel != OK_COMPLETED {
 			return
 		}
-		fmt.Printf("m/%2d - address: %s\n", path, address)
+		fmt.Printf("%s\n", address)
 	}
 
 	return
